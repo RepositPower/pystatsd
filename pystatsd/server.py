@@ -7,6 +7,8 @@ import logging
 from . import gmetric
 from subprocess import call
 from warnings import warn
+import urllib2
+import json
 # from xdrlib import Packer, Unpacker
 
 log = logging.getLogger(__name__)
@@ -49,7 +51,7 @@ class Server(object):
                  ganglia_host='localhost', ganglia_port=8649,
                  ganglia_spoof_host='statsd:statsd',
                  gmetric_exec='/usr/bin/gmetric', gmetric_options = '-d',
-                 graphite_host='localhost', graphite_port=2003, global_prefix=None, 
+                 graphite_host='localhost', graphite_port=2003, global_prefix=None,
                  flush_interval=10000,
                  no_aggregate_counters=False, counters_prefix='stats',
                  timers_prefix='stats.timers', expire=0):
@@ -155,6 +157,8 @@ class Server(object):
             stat_string = ''
         elif self.transport == 'ganglia':
             g = gmetric.Gmetric(self.ganglia_host, self.ganglia_port, self.ganglia_protocol)
+        elif self.transport == 'opentsdb':
+            tsdb_stats = []
 
         for k, (v, t) in self.counters.items():
             if self.expire > 0 and t + self.expire < ts:
@@ -177,6 +181,12 @@ class Server(object):
                 g.send(k, v, "double", "count", "both", 60, self.dmax, "_counters", self.ganglia_spoof_host)
             elif self.transport == 'ganglia-gmetric':
                 self.send_to_ganglia_using_gmetric(k,v, "_counters", "count")
+            elif self.transport == 'opentsdb':
+                tsdb_stats.append({"metric": 'statsd', "timestamp": ts,
+                              "value": v, "tags": {
+                                  "key": '%s.%s' % (self.counters_prefix, k),
+                                  "host": socket.gethostname()}
+                              })
 
             # Clear the counter once the data is sent
             del(self.counters[k])
@@ -201,6 +211,12 @@ class Server(object):
                 g.send(k, v, "double", "count", "both", 60, self.dmax, "_gauges", self.ganglia_spoof_host)
             elif self.transport == 'ganglia-gmetric':
                 self.send_to_ganglia_using_gmetric(k,v, "_gauges", "gauge")
+            elif self.transport == 'opentsdb':
+                tsdb_stats.append({"metric": 'statsd', "timestamp": ts,
+                              "value": v, "tags": {
+                                  "key": '%s.%s' % (self.counters_prefix, k),
+                                  "host": socket.gethostname()}
+                              })
 
             stats += 1
 
@@ -265,6 +281,32 @@ class Server(object):
                     self.send_to_ganglia_using_gmetric(k + "_max",  max / 1000, group, "seconds")
                     self.send_to_ganglia_using_gmetric(k + "_count", count , group, "count")
                     self.send_to_ganglia_using_gmetric(k + "_" + str(self.pct_threshold) + "pct",  max_threshold / 1000, group, "seconds")
+                elif self.transport == 'opentsdb':
+                    tsdb_stats.append({"metric": 'statsd', "timestamp": ts,
+                                "value": min, "tags": {
+                                    "key": '%s.%s.lower' % (self.counters_prefix, k),
+                                    "host": socket.gethostname()}
+                                })
+                    tsdb_stats.append({"metric": 'statsd', "timestamp": ts,
+                                "value": count, "tags": {
+                                    "key": '%s.%s.count' % (self.counters_prefix, k),
+                                    "host": socket.gethostname()}
+                                })
+                    tsdb_stats.append({"metric": 'statsd', "timestamp": ts,
+                                "value": mean, "tags": {
+                                    "key": '%s.%s.mean' % (self.counters_prefix, k),
+                                    "host": socket.gethostname()}
+                                })
+                    tsdb_stats.append({"metric": 'statsd', "timestamp": ts,
+                                "value": max, "tags": {
+                                    "key": '%s.%s.upper' % (self.counters_prefix, k),
+                                    "host": socket.gethostname()}
+                                })
+                    tsdb_stats.append({"metric": 'statsd', "timestamp": ts,
+                                "value": max_threshold, "tags": {
+                                    "key": '%s.%s.upper_%s' % (self.counters_prefix, k, self.pct_threshold),
+                                    "host": socket.gethostname()}
+                                })
 
                 stats += 1
 
@@ -287,6 +329,14 @@ class Server(object):
                 log.error("Error communicating with Graphite: %s" % e)
                 if self.debug:
                     print("Error communicating with Graphite: %s" % e)
+        elif self.transport == 'opentsdb':
+            if len(tsdb_stats):
+                req = urllib2.Request(
+                    "http://dtsdb.repositpower.net/api/put?details",
+                    json.dumps(tsdb_stats), headers={
+                        "Content-Type": "application/json"}
+                )
+                print urllib2.urlopen(req).read()
 
         if self.debug:
             print("\n================== Flush completed. Waiting until next flush. Sent out %d metrics =======" \
@@ -315,7 +365,7 @@ class Server(object):
             try:
                 self.process(data)
             except Exception as error:
-                log.error("Bad data from %s: %s",addr,error) 
+                log.error("Bad data from %s: %s",addr,error)
 
 
     def stop(self):
@@ -364,7 +414,7 @@ def run_server():
     # Use gmetric
     parser.add_argument('--ganglia-gmetric-exec', dest='gmetric_exec', help='Use gmetric executable. Defaults to /usr/bin/gmetric', type=str, default="/usr/bin/gmetric")
     parser.add_argument('--ganglia-gmetric-options', dest='gmetric_options', help='Options to pass to gmetric. Defaults to -d 60', type=str, default="-d 60")
-    # 
+    #
     parser.add_argument('--flush-interval', dest='flush_interval', help='how often to send data to graphite in millis (default: 10000)', type=int, default=10000)
     parser.add_argument('--no-aggregate-counters', dest='no_aggregate_counters', help='should statsd report counters as absolute instead of count/sec', action='store_true')
     parser.add_argument('--global-prefix', dest='global_prefix', help='prefix to append to all stats sent to graphite. Useful for hosted services (ex: Hosted Graphite) or stats namespacing (default: None)', type=str, default=None)
