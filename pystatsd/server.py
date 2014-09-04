@@ -52,7 +52,7 @@ class Server(object):
                  ganglia_spoof_host='statsd:statsd',
                  gmetric_exec='/usr/bin/gmetric', gmetric_options = '-d',
                  graphite_host='localhost', graphite_port=2003, global_prefix=None,
-                 flush_interval=10000,
+                 flush_interval=10000, opentsdb_host='localhost',
                  no_aggregate_counters=False, counters_prefix='stats',
                  timers_prefix='stats.timers', expire=0):
         self.buf = 8192
@@ -88,6 +88,9 @@ class Server(object):
         self.timers = {}
         self.gauges = {}
         self.flusher = 0
+
+        # OpenTSDB specific settings
+        self.opentsdb_host = opentsdb_host
 
     def send_to_ganglia_using_gmetric(self,k,v,group, units):
         call([self.gmetric_exec, self.gmetric_options, "-u", units, "-g", group, "-t", "double", "-n",  k, "-v", str(v) ])
@@ -332,11 +335,13 @@ class Server(object):
         elif self.transport == 'opentsdb':
             if len(tsdb_stats):
                 req = urllib2.Request(
-                    "http://dtsdb.repositpower.net/api/put?details",
+                    "http://{0}/api/put?details".format(self.opentsdb_host),
                     json.dumps(tsdb_stats), headers={
                         "Content-Type": "application/json"}
                 )
-                print urllib2.urlopen(req).read()
+                output = urllib2.urlopen(req).read()
+                if self.debug:
+                    print output
 
         if self.debug:
             print("\n================== Flush completed. Waiting until next flush. Sent out %d metrics =======" \
@@ -388,6 +393,7 @@ class ServerDaemon(Daemon):
                         ganglia_port=options.ganglia_port,
                         gmetric_exec=options.gmetric_exec,
                         gmetric_options=options.gmetric_options,
+                        opentsdb_host=options.opentsdb_host,
                         flush_interval=options.flush_interval,
                         no_aggregate_counters=options.no_aggregate_counters,
                         counters_prefix=options.counters_prefix,
@@ -426,6 +432,7 @@ def run_server():
     parser.add_argument('--restart', dest='restart', action='store_true', help='restart a running daemon', default=False)
     parser.add_argument('--stop', dest='stop', action='store_true', help='stop a running daemon', default=False)
     parser.add_argument('--expire', dest='expire', help='time-to-live for old stats (in secs)', type=int, default=0)
+    parser.add_argument('--opentsdb-host', dest='opentsdb_host', help='host to connect to opentsdb on (default: localhost)', type=str, default='localhost')
     options = parser.parse_args(sys.argv[1:])
 
     log_level = logging.DEBUG if options.debug else logging.INFO
