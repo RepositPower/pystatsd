@@ -10,7 +10,6 @@ from warnings import warn
 import urllib2
 import json
 # from xdrlib import Packer, Unpacker
-
 log = logging.getLogger(__name__)
 
 try:
@@ -46,6 +45,7 @@ TIMER_MSG = '''%(prefix)s.%(key)s.lower %(min)s %(ts)s
 
 
 class Server(object):
+    sclient = None
 
     def __init__(self, pct_threshold=90, debug=False, transport='graphite',
                  ganglia_host='localhost', ganglia_port=8649,
@@ -53,6 +53,8 @@ class Server(object):
                  gmetric_exec='/usr/bin/gmetric', gmetric_options = '-d',
                  graphite_host='localhost', graphite_port=2003, global_prefix=None,
                  flush_interval=10000, opentsdb_host='localhost',
+                 stsdb_host='localhost', stsdb_user_cert="",
+                 stsdb_server_cert="",
                  no_aggregate_counters=False, counters_prefix='stats',
                  timers_prefix='stats.timers', expire=0):
         self.buf = 8192
@@ -91,6 +93,13 @@ class Server(object):
 
         # OpenTSDB specific settings
         self.opentsdb_host = opentsdb_host
+        self.stsdb_host = stsdb_host
+        if self.transport == 'stsdb':
+            from stsdb_client.async_secure_tsdb_client import AsyncSecureTSDBClient
+            self.sclient = AsyncSecureTSDBClient(
+                working_dir="/tmp/pystatsd", host=self.stsdb_host,
+                user_secret_cert=stsdb_user_cert,
+                server_public_cert=stsdb_server_cert)
 
     def send_to_ganglia_using_gmetric(self,k,v,group, units):
         call([self.gmetric_exec, self.gmetric_options, "-u", units, "-g", group, "-t", "double", "-n",  k, "-v", str(v) ])
@@ -160,7 +169,7 @@ class Server(object):
             stat_string = ''
         elif self.transport == 'ganglia':
             g = gmetric.Gmetric(self.ganglia_host, self.ganglia_port, self.ganglia_protocol)
-        elif self.transport == 'opentsdb':
+        elif self.transport == 'opentsdb' or self.transport == 'stsdb':
             tsdb_stats = []
 
         for k, (v, t) in self.counters.items():
@@ -184,7 +193,7 @@ class Server(object):
                 g.send(k, v, "double", "count", "both", 60, self.dmax, "_counters", self.ganglia_spoof_host)
             elif self.transport == 'ganglia-gmetric':
                 self.send_to_ganglia_using_gmetric(k,v, "_counters", "count")
-            elif self.transport == 'opentsdb':
+            elif self.transport == 'opentsdb' or self.transport == 'stsdb':
                 tsdb_stats.append({"metric": 'statsd', "timestamp": ts,
                               "value": v, "tags": {
                                   "key": '%s.%s' % (self.counters_prefix, k),
@@ -214,7 +223,7 @@ class Server(object):
                 g.send(k, v, "double", "count", "both", 60, self.dmax, "_gauges", self.ganglia_spoof_host)
             elif self.transport == 'ganglia-gmetric':
                 self.send_to_ganglia_using_gmetric(k,v, "_gauges", "gauge")
-            elif self.transport == 'opentsdb':
+            elif self.transport == 'opentsdb' or self.transport == 'stsdb':
                 tsdb_stats.append({"metric": 'statsd', "timestamp": ts,
                               "value": v, "tags": {
                                   "key": '%s.%s' % (self.counters_prefix, k),
@@ -284,7 +293,7 @@ class Server(object):
                     self.send_to_ganglia_using_gmetric(k + "_max",  max / 1000, group, "seconds")
                     self.send_to_ganglia_using_gmetric(k + "_count", count , group, "count")
                     self.send_to_ganglia_using_gmetric(k + "_" + str(self.pct_threshold) + "pct",  max_threshold / 1000, group, "seconds")
-                elif self.transport == 'opentsdb':
+                elif self.transport == 'opentsdb' or self.transport == 'stsdb':
                     tsdb_stats.append({"metric": 'statsd', "timestamp": ts,
                                 "value": min, "tags": {
                                     "key": '%s.%s.lower' % (self.counters_prefix, k),
@@ -342,6 +351,12 @@ class Server(object):
                 output = urllib2.urlopen(req).read()
                 if self.debug:
                     print output
+        elif self.transport == 'stsdb':
+            if len(tsdb_stats):
+                self.sclient.write({'datapoints': tsdb_stats})
+                if self.debug:
+                    print "Pushed data to AsyncSecureTSDBClient"
+
 
         if self.debug:
             print("\n================== Flush completed. Waiting until next flush. Sent out %d metrics =======" \
@@ -372,10 +387,11 @@ class Server(object):
             except Exception as error:
                 log.error("Bad data from %s: %s",addr,error)
 
-
     def stop(self):
         self._timer.cancel()
         self._sock.close()
+        if self.sclient is not None:
+            self.sclient.close()
 
 
 class ServerDaemon(Daemon):
@@ -394,6 +410,9 @@ class ServerDaemon(Daemon):
                         gmetric_exec=options.gmetric_exec,
                         gmetric_options=options.gmetric_options,
                         opentsdb_host=options.opentsdb_host,
+                        stsdb_host=options.stsdb_host,
+                        stsdb_user_cert=options.stsdb_user_cert,
+                        stsdb_server_cert=options.stsdb_server_cert,
                         flush_interval=options.flush_interval,
                         no_aggregate_counters=options.no_aggregate_counters,
                         counters_prefix=options.counters_prefix,
@@ -433,6 +452,9 @@ def run_server():
     parser.add_argument('--stop', dest='stop', action='store_true', help='stop a running daemon', default=False)
     parser.add_argument('--expire', dest='expire', help='time-to-live for old stats (in secs)', type=int, default=0)
     parser.add_argument('--opentsdb-host', dest='opentsdb_host', help='host to connect to opentsdb on (default: localhost)', type=str, default='localhost')
+    parser.add_argument('--stsdb-host', dest='stsdb_host', help='host to connect to SecureTSDBProxy on (default: localhost)', type=str, default='localhost')
+    parser.add_argument('--stsdb-user-cert', dest='stsdb_user_cert', help='User certificate for 0MQ auth (default: "")', type=str, default='')
+    parser.add_argument('--stsdb-server-cert', dest='stsdb_server_cert', help='Server certificate for 0MQ auth (default: "")', type=str, default='')
     options = parser.parse_args(sys.argv[1:])
 
     log_level = logging.DEBUG if options.debug else logging.INFO
