@@ -99,7 +99,7 @@ class Server(object):
             self.sclient = AsyncSecureTSDBClient(
                 working_dir="/tmp/pystatsd", host=self.stsdb_host,
                 user_secret_cert=stsdb_user_cert,
-                server_public_cert=stsdb_server_cert)
+                server_public_cert=stsdb_server_cert, nostatsd=True)
 
     def send_to_ganglia_using_gmetric(self,k,v,group, units):
         call([self.gmetric_exec, self.gmetric_options, "-u", units, "-g", group, "-t", "double", "-n",  k, "-v", str(v) ])
