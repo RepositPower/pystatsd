@@ -54,23 +54,23 @@ class Client(object):
         stats = {stat: "%f|g" % value}
         self.send(stats, sample_rate)
 
-    def increment(self, stats, sample_rate=1):
+    def increment(self, stats, amount=1, sample_rate=1):
         """
         Increments one or more stats counters
         >>> statsd_client.increment('some.int')
         >>> statsd_client.increment('some.int',0.5)
         """
-        self.update_stats(stats, 1, sample_rate=sample_rate)
+        self.update_stats(stats, amount, sample_rate=sample_rate)
 
     # alias
     incr = increment
 
-    def decrement(self, stats, sample_rate=1):
+    def decrement(self, stats, amount=1, sample_rate=1):
         """
         Decrements one or more stats counters
         >>> statsd_client.decrement('some.int')
         """
-        self.update_stats(stats, -1, sample_rate=sample_rate)
+        self.update_stats(stats, amount * -1, sample_rate=sample_rate)
 
     # alias
     decr = decrement
