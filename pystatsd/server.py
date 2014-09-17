@@ -3,6 +3,7 @@ import socket
 import threading
 import time
 import types
+import os
 import logging
 from . import gmetric
 from subprocess import call
@@ -53,8 +54,7 @@ class Server(object):
                  gmetric_exec='/usr/bin/gmetric', gmetric_options = '-d',
                  graphite_host='localhost', graphite_port=2003, global_prefix=None,
                  flush_interval=10000, opentsdb_host='localhost',
-                 stsdb_host='localhost', stsdb_user_cert="",
-                 stsdb_server_cert="",
+                 stsdb_host='localhost',
                  no_aggregate_counters=False, counters_prefix='stats',
                  timers_prefix='stats.timers', expire=0):
         self.buf = 8192
@@ -98,8 +98,9 @@ class Server(object):
             from stsdb_client.async_secure_tsdb_client import AsyncSecureTSDBClient
             self.sclient = AsyncSecureTSDBClient(
                 working_dir="/tmp/pystatsd", host=self.stsdb_host,
-                user_secret_cert=stsdb_user_cert,
-                server_public_cert=stsdb_server_cert, nostatsd=True)
+                user_secret_cert=os.environ.get('ZMQ_CLIENT_CERT'),
+                server_public_cert=os.environ.get('ZMQ_SERVER_CERT'),
+                nostatsd=True)
 
     def send_to_ganglia_using_gmetric(self,k,v,group, units):
         call([self.gmetric_exec, self.gmetric_options, "-u", units, "-g", group, "-t", "double", "-n",  k, "-v", str(v) ])
@@ -411,8 +412,6 @@ class ServerDaemon(Daemon):
                         gmetric_options=options.gmetric_options,
                         opentsdb_host=options.opentsdb_host,
                         stsdb_host=options.stsdb_host,
-                        stsdb_user_cert=options.stsdb_user_cert,
-                        stsdb_server_cert=options.stsdb_server_cert,
                         flush_interval=options.flush_interval,
                         no_aggregate_counters=options.no_aggregate_counters,
                         counters_prefix=options.counters_prefix,
@@ -453,8 +452,6 @@ def run_server():
     parser.add_argument('--expire', dest='expire', help='time-to-live for old stats (in secs)', type=int, default=0)
     parser.add_argument('--opentsdb-host', dest='opentsdb_host', help='host to connect to opentsdb on (default: localhost)', type=str, default='localhost')
     parser.add_argument('--stsdb-host', dest='stsdb_host', help='host to connect to SecureTSDBProxy on (default: localhost)', type=str, default='localhost')
-    parser.add_argument('--stsdb-user-cert', dest='stsdb_user_cert', help='User certificate for 0MQ auth (default: "")', type=str, default='')
-    parser.add_argument('--stsdb-server-cert', dest='stsdb_server_cert', help='Server certificate for 0MQ auth (default: "")', type=str, default='')
     options = parser.parse_args(sys.argv[1:])
 
     log_level = logging.DEBUG if options.debug else logging.INFO
