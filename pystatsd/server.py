@@ -444,6 +444,7 @@ class ServerDaemon(Daemon):
                         gmetric_options=options.gmetric_options,
                         opentsdb_host=options.opentsdb_host,
                         stsdb_host=options.stsdb_host,
+                        zabbix_host=options.zabbix_host,
                         flush_interval=options.flush_interval,
                         no_aggregate_counters=options.no_aggregate_counters,
                         counters_prefix=options.counters_prefix,
