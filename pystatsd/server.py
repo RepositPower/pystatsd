@@ -8,6 +8,8 @@ import logging
 from . import gmetric
 from subprocess import call
 from warnings import warn
+from zbxsend import Metric, send_to_zabbix
+
 import urllib2
 import json
 # from xdrlib import Packer, Unpacker
@@ -22,6 +24,9 @@ from .daemon import Daemon
 
 
 __all__ = ['Server']
+
+
+HOST = socket.gethostname()
 
 
 def _clean_key(k):
@@ -54,7 +59,7 @@ class Server(object):
                  gmetric_exec='/usr/bin/gmetric', gmetric_options = '-d',
                  graphite_host='localhost', graphite_port=2003, global_prefix=None,
                  flush_interval=10000, opentsdb_host='localhost',
-                 stsdb_host='localhost',
+                 stsdb_host='localhost', zabbix_host='localhost',
                  no_aggregate_counters=False, counters_prefix='stats',
                  timers_prefix='stats.timers', expire=0):
         self.buf = 8192
@@ -101,6 +106,10 @@ class Server(object):
                 user_secret_cert=os.environ.get('ZMQ_CLIENT_CERT'),
                 server_public_cert=os.environ.get('ZMQ_SERVER_CERT'),
                 nostatsd=True)
+
+        # zabbix specific settings
+        self.zabbix_host = zabbix_host
+
 
     def send_to_ganglia_using_gmetric(self,k,v,group, units):
         call([self.gmetric_exec, self.gmetric_options, "-u", units, "-g", group, "-t", "double", "-n",  k, "-v", str(v) ])
@@ -172,6 +181,8 @@ class Server(object):
             g = gmetric.Gmetric(self.ganglia_host, self.ganglia_port, self.ganglia_protocol)
         elif self.transport == 'opentsdb' or self.transport == 'stsdb':
             tsdb_stats = []
+        elif self.transport == 'zabbix':
+            zabbix_metrics = []
 
         for k, (v, t) in self.counters.items():
             if self.expire > 0 and t + self.expire < ts:
@@ -200,6 +211,9 @@ class Server(object):
                                   "key": '%s.%s' % (self.counters_prefix, k),
                                   "host": socket.gethostname()}
                               })
+            elif self.transport == 'zabbix':
+                zabbix_metrics.append(
+                    Metric(HOST, '%s.%s' % (self.counters_prefix, k), v))
 
             # Clear the counter once the data is sent
             del(self.counters[k])
@@ -230,6 +244,9 @@ class Server(object):
                                   "key": '%s.%s' % (self.counters_prefix, k),
                                   "host": socket.gethostname()}
                               })
+            elif self.transport == 'zabbix':
+                zabbix_metrics.append(
+                    Metric(HOST, '%s.%s' % (self.counters_prefix, k), v))
 
             stats += 1
 
@@ -320,6 +337,14 @@ class Server(object):
                                     "key": '%s.%s.upper_%s' % (self.counters_prefix, k, self.pct_threshold),
                                     "host": socket.gethostname()}
                                 })
+                elif self.transport == 'zabbix':
+                    zabbix_metrics.append(
+                        Metric(HOST, '%s.%s.count' % (self.counters_prefix, k),
+                               count))
+                    zabbix_metrics.append(
+                        Metric(HOST, '%s.%s.upper_%s' % (
+                            self.counters_prefix, k, self.pct_threshold),
+                            max_threshold))
 
                 stats += 1
 
@@ -357,7 +382,11 @@ class Server(object):
                 self.sclient.write({'datapoints': tsdb_stats})
                 if self.debug:
                     print "Pushed data to AsyncSecureTSDBClient"
-
+        elif self.transport == 'zabbix':
+            send_to_zabbix(zabbix_metrics, self.zabbix_host)
+            if self.debug:
+                print "Sent {0} datapoints to zabbix".format(
+                    len(zabbix_metrics))
 
         if self.debug:
             print("\n================== Flush completed. Waiting until next flush. Sent out %d metrics =======" \
@@ -452,6 +481,7 @@ def run_server():
     parser.add_argument('--expire', dest='expire', help='time-to-live for old stats (in secs)', type=int, default=0)
     parser.add_argument('--opentsdb-host', dest='opentsdb_host', help='host to connect to opentsdb on (default: localhost)', type=str, default='localhost')
     parser.add_argument('--stsdb-host', dest='stsdb_host', help='host to connect to SecureTSDBProxy on (default: localhost)', type=str, default='localhost')
+    parser.add_argument('--zabbix-host', dest='zabbix_host', help='host to connect to zabbix on (default: localhost)', type=str, default='localhost')
     options = parser.parse_args(sys.argv[1:])
 
     log_level = logging.DEBUG if options.debug else logging.INFO
