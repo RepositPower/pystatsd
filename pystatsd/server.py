@@ -8,7 +8,10 @@ import logging
 from . import gmetric
 from subprocess import call
 from warnings import warn
-from zbxsend import Metric, send_to_zabbix
+try:
+    from zbxsend import Metric, send_to_zabbix
+except ImportError:
+    pass
 
 import urllib2
 import json
