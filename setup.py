@@ -13,6 +13,7 @@ setup(
     description = ("pystatsd is a client for Etsy's statsd server, a front end/proxy for the Graphite stats collection and graphing server."),
     url='https://github.com/sivy/py-statsd',
     license = "BSD",
+    install_requires=['zbxsend'],
     packages=['pystatsd'],
     long_description=read('README.md'),
     classifiers=[
