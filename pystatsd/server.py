@@ -489,7 +489,11 @@ def run_server():
     options = parser.parse_args(sys.argv[1:])
 
     log_level = logging.DEBUG if options.debug else logging.INFO
-    logging.basicConfig(level=log_level,format='%(asctime)s [%(levelname)s] %(message)s')
+    try:
+        from rutils import setupLogging
+    except ImportError:
+        logging.basicConfig(
+            level=log_level,format='%(asctime)s [%(levelname)s] %(message)s')
 
     daemon = ServerDaemon(options.pidfile)
     if options.daemonize:
