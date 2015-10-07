@@ -11,4 +11,4 @@ except ImportError:
 from .statsd import Client
 from .server import Server
 
-VERSION = (0, 2, 1)
+VERSION = (0, 2, 2)

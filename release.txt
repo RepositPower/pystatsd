@@ -1,7 +1,15 @@
+M2Crypto==0.22.3
+avro==1.7.7
 coverage==3.7.1
 mock==1.0.1
 nose==1.3.4
--e git+https://github.com/RepositPower/pystatsd.git@1c326675bbc6ced6196c5ec4c4f420947825b9de#egg=pystatsd-dev
+psutil==2.1.1
+-e git+https://github.com/RepositPower/pystatsd.git@49aae7565d58da6993153b27807219a5af529c06#egg=pystatsd-dev
+pytz==2014.7
+pyzmq==14.5.0
+remote-pdb==0.2.1
+rutils==1.3.9
 wheel==0.24.0
-zbxsend==0.1.6
 wsgiref==0.1.2
+zbxsend==0.1.6
+
