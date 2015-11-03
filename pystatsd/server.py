@@ -386,7 +386,9 @@ class Server(object):
                 if self.debug:
                     print "Pushed data to AsyncSecureTSDBClient"
         elif self.transport == 'zabbix':
-            send_to_zabbix(zabbix_metrics, self.zabbix_host)
+            if len(zabbix_metrics) > 0:
+                send_to_zabbix(zabbix_metrics, self.zabbix_host)
+
             if self.debug:
                 print "Sent {0} datapoints to zabbix".format(
                     len(zabbix_metrics))
