@@ -215,8 +215,7 @@ class Server(object):
                                   "host": socket.gethostname()}
                               })
             elif self.transport == 'zabbix':
-                zabbix_metrics.append(
-                    Metric(HOST, '%s.%s' % (self.counters_prefix, k), v))
+                zabbix_metrics.append(Metric(HOST, k, v))
 
             # Clear the counter once the data is sent
             del(self.counters[k])
@@ -248,8 +247,7 @@ class Server(object):
                                   "host": socket.gethostname()}
                               })
             elif self.transport == 'zabbix':
-                zabbix_metrics.append(
-                    Metric(HOST, '%s.%s' % (self.counters_prefix, k), v))
+                zabbix_metrics.append(Metric(HOST, k, v))
 
             stats += 1
 
@@ -341,13 +339,10 @@ class Server(object):
                                     "host": socket.gethostname()}
                                 })
                 elif self.transport == 'zabbix':
+                    zabbix_metrics.append(Metric(HOST, '%s.count' % k, count))
                     zabbix_metrics.append(
-                        Metric(HOST, '%s.%s.count' % (self.counters_prefix, k),
-                               count))
-                    zabbix_metrics.append(
-                        Metric(HOST, '%s.%s.upper_%s' % (
-                            self.counters_prefix, k, self.pct_threshold),
-                            max_threshold))
+                        Metric(HOST, '%s.upper_%s' % (k, self.pct_threshold),
+                               max_threshold))
 
                 stats += 1
 
@@ -387,7 +382,11 @@ class Server(object):
                     print "Pushed data to AsyncSecureTSDBClient"
         elif self.transport == 'zabbix':
             if len(zabbix_metrics) > 0:
-                send_to_zabbix(zabbix_metrics, self.zabbix_host)
+                for i in xrange(5):
+                    if send_to_zabbix(zabbix_metrics, self.zabbix_host):
+                        break
+                else:
+                    print "Failed to send data to zabbix"
 
             if self.debug:
                 print "Sent {0} datapoints to zabbix".format(
@@ -496,6 +495,8 @@ def run_server():
     except ImportError:
         logging.basicConfig(
             level=log_level,format='%(asctime)s [%(levelname)s] %(message)s')
+    else:
+        setupLogging()
 
     daemon = ServerDaemon(options.pidfile)
     if options.daemonize:

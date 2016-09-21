@@ -5,4 +5,4 @@ zbxsend_logger.setLevel(logging.CRITICAL)
 from .statsd import Client
 from .server import Server
 
-VERSION = (0, 2, 4)
+VERSION = (0, 2, 5)
